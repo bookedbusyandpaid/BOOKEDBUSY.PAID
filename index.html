@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#ff5db1" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Booked Busy Paid" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="icon-512.png" />
+  <title>Booked, Busy & Paid: Boss Mode</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: linear-gradient(to bottom, #140b12, #24101f, #10080f);
+      color: white;
+      font-family: Arial, sans-serif;
+      text-align: center;
+      overflow-x: hidden;
+      min-height: 100vh;
+    }
+    h1 {
+      margin-top: 10px;
+      font-size: 28px;
+      color: #ff95d6;
+      letter-spacing: 1px;
+      padding: 0 10px;
+    }
+    #hud {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin: 10px 10px;
+      font-size: 14px;
+    }
+    .stat {
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 14px;
+      padding: 8px 12px;
+      min-width: 92px;
+    }
+    canvas {
+      display: block;
+      margin: 12px auto;
+      background: linear-gradient(to bottom, #2b1530, #180d18);
+      border: 2px solid rgba(255,255,255,0.12);
+      border-radius: 16px;
+      box-shadow: 0 0 30px rgba(255, 105, 180, 0.18);
+      touch-action: none;
+      width: min(94vw, 400px);
+      height: auto;
+      max-height: 72vh;
+    }
+    #shop {
+      width: min(430px, 94vw);
+      margin: 10px auto 20px;
+      background: rgba(255,255,255,0.07);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 16px;
+      padding: 12px;
+    }
+    #shop h2 {
+      font-size: 18px;
+      margin-bottom: 10px;
+      color: #ffd6ee;
+    }
+    .shop-buttons {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 8px;
+    }
+    button {
+      background: #ff5db1;
+      color: white;
+      border: none;
+      border-radius: 999px;
+      padding: 10px 14px;
+      font-size: 14px;
+      cursor: pointer;
+      font-weight: bold;
+    }
+    #tip {
+      margin-top: 10px;
+      font-size: 13px;
+      color: #f7c7e3;
+      line-height: 1.35;
+    }
+  </style>
+</head>
+<body>
+  <h1>💅🏾 Booked, Busy & Paid: Boss Mode 💸</h1>
+
+  <div id="hud">
+    <div class="stat">Score: <span id="score">0</span></div>
+    <div class="stat">Coins: <span id="coins">0</span></div>
+    <div class="stat">Level: <span id="level">1</span></div>
+    <div class="stat">Boss HP: <span id="bossHp">0</span></div>
+    <div class="stat">High: <span id="highScore">0</span></div>
+  </div>
+
+  <canvas id="game" width="400" height="650"></canvas>
+
+  <div id="shop">
+    <h2>🛍️ Upgrade Shop</h2>
+    <div class="shop-buttons">
+      <button id="buyWidth">Wider Paddle (10)</button>
+      <button id="buySlow">Slow Ball (15)</button>
+      <button id="buyShield">Rose Shield (20)</button>
+      <button id="buyPlanner">Planner Boost (18)</button>
+    </div>
+    <div id="tip">
+      Catch 💎 💵 🌹 📔 • Dodge distractions during boss rounds • Tap canvas to start or restart
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById("game");
+    const ctx = canvas.getContext("2d");
+
+    const scoreEl = document.getElementById("score");
+    const coinsEl = document.getElementById("coins");
+    const levelEl = document.getElementById("level");
+    const bossHpEl = document.getElementById("bossHp");
+    const highScoreEl = document.getElementById("highScore");
+
+    const buyWidthBtn = document.getElementById("buyWidth");
+    const buySlowBtn = document.getElementById("buySlow");
+    const buyShieldBtn = document.getElementById("buyShield");
+    const buyPlannerBtn = document.getElementById("buyPlanner");
+
+    let score = 0;
+    let coins = 0;
+    let level = 1;
+    let shield = 0;
+    let plannerBoost = 0;
+    let frame = 0;
+    let gameState = "start";
+    let warningTimer = 0;
+
+    let highScore = Number(localStorage.getItem("bbpBossHighScore")) || 0;
+    highScoreEl.textContent = highScore;
+
+    const paddle = { x: 145, y: 600, w: 110, h: 16 };
+    const ball = { x: 200, y: 320, r: 16, dx: 3.5, dy: 4.2, emoji: "💖" };
+
+    let drops = [];
+    let obstacles = [];
+    let boss = null;
+
+    function resetBall() {
+      ball.x = canvas.width / 2;
+      ball.y = canvas.height / 2;
+      ball.dx = Math.random() > 0.5 ? 3.5 : -3.5;
+      ball.dy = 4.2 + Math.min((level - 1) * 0.25, 2.5);
+    }
+
+    function startBossRound() {
+      boss = { active: true, hp: 8 + level, maxHp: 8 + level, emoji: "👠", x: canvas.width / 2, y: 90, dir: 1, speed: 2 + level * 0.08 };
+      warningTimer = 120;
+    }
+
+    function endBossRound() {
+      boss = null;
+      obstacles = [];
+      level += 1;
+      frame = 0;
+    }
+
+    function spawnDrop() {
+      const types = ["💎", "💵", "🌹", "📔"];
+      const type = types[Math.floor(Math.random() * types.length)];
+      drops.push({ x: Math.random() * (canvas.width - 30) + 15, y: -20, size: 24, speed: 2 + Math.random() * 1.6 + level * 0.12, type });
+    }
+
+    function spawnObstacle() {
+      const types = ["⏰", "📱", "💅🏾"];
+      const type = types[Math.floor(Math.random() * types.length)];
+      obstacles.push({ x: Math.random() * (canvas.width - 30) + 15, y: -20, size: 26, speed: 3 + Math.random() * 1.8 + level * 0.15, type });
+    }
+
+    function drawPaddle() {
+      ctx.save();
+      ctx.fillStyle = "#ff5db1";
+      ctx.shadowBlur = 18;
+      ctx.shadowColor = "rgba(255, 93, 177, 0.7)";
+      ctx.fillRect(paddle.x, paddle.y, paddle.w, paddle.h);
+      ctx.restore();
+      ctx.font = "18px serif";
+      ctx.fillText("📔", paddle.x + paddle.w / 2 - 9, paddle.y - 5);
+    }
+
+    function drawBall() {
+      ctx.font = "30px serif";
+      ctx.fillText(ball.emoji, ball.x - 14, ball.y + 10);
+    }
+
+    function drawDrops() {
+      ctx.font = "24px serif";
+      drops.forEach(drop => ctx.fillText(drop.type, drop.x - 12, drop.y + 8));
+    }
+
+    function drawObstacles() {
+      ctx.font = "26px serif";
+      obstacles.forEach(obs => ctx.fillText(obs.type, obs.x - 13, obs.y + 8));
+    }
+
+    function drawShield() {
+      if (shield > 0) {
+        ctx.save();
+        ctx.strokeStyle = "rgba(255, 192, 203, 0.85)";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(ball.x, ball.y, 24, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+
+    function drawBoss() {
+      if (!boss) return;
+      ctx.font = "46px serif";
+      ctx.fillText(boss.emoji, boss.x - 20, boss.y);
+
+      ctx.fillStyle = "rgba(255,255,255,0.18)";
+      ctx.fillRect(90, 26, 220, 16);
+
+      ctx.fillStyle = "#ff6ab8";
+      const width = (boss.hp / boss.maxHp) * 220;
+      ctx.fillRect(90, 26, width, 16);
+
+      ctx.strokeStyle = "rgba(255,255,255,0.3)";
+      ctx.strokeRect(90, 26, 220, 16);
+    }
+
+    function drawBackgroundDetails() {
+      ctx.save();
+      ctx.globalAlpha = 0.08;
+      ctx.font = "22px serif";
+      for (let i = 0; i < 8; i++) ctx.fillText("✨", 30 + i * 45, 70 + (i % 2) * 20);
+      ctx.restore();
+    }
+
+    function drawBanner(text, y = 315, size = 24) {
+      ctx.save();
+      ctx.fillStyle = "rgba(0,0,0,0.45)";
+      ctx.fillRect(40, y - 30, 320, 55);
+      ctx.fillStyle = "#ffd8ef";
+      ctx.font = size + "px Arial";
+      ctx.fillText(text, 65, y);
+      ctx.restore();
+    }
+
+    function drawStartScreen() {
+      ctx.fillStyle = "rgba(0,0,0,0.7)";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = "#fff";
+      ctx.font = "30px Arial";
+      ctx.fillText("Booked, Busy & Paid", 48, 220);
+      ctx.font = "20px Arial";
+      ctx.fillStyle = "#ffd4ea";
+      ctx.fillText("Catch the bag. Dodge distractions.", 58, 270);
+      ctx.fillText("Tap to Start", 140, 330);
+    }
+
+    function drawGameOver() {
+      ctx.fillStyle = "rgba(0,0,0,0.74)";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = "#fff";
+      ctx.font = "28px Arial";
+      ctx.fillText("Game Over", 128, 255);
+      ctx.font = "18px Arial";
+      ctx.fillStyle = "#ffd3ea";
+      ctx.fillText("Final Score: " + score, 145, 300);
+      ctx.fillText("Coins: " + coins, 165, 330);
+      ctx.fillText("Tap to Restart", 142, 370);
+    }
+
+    function updateHud() {
+      scoreEl.textContent = score;
+      coinsEl.textContent = coins;
+      levelEl.textContent = level;
+      bossHpEl.textContent = boss ? boss.hp : 0;
+      highScoreEl.textContent = highScore;
+    }
+
+    function updateBall() {
+      ball.x += ball.dx;
+      ball.y += ball.dy;
+      if (ball.x < ball.r || ball.x > canvas.width - ball.r) ball.dx *= -1;
+      if (ball.y < ball.r) ball.dy *= -1;
+
+      const hitPaddle = ball.y + ball.r >= paddle.y && ball.x >= paddle.x && ball.x <= paddle.x + paddle.w && ball.dy > 0;
+
+      if (hitPaddle) {
+        const hitPoint = (ball.x - (paddle.x + paddle.w / 2)) / (paddle.w / 2);
+        ball.dx = hitPoint * 5;
+        ball.dy *= -1;
+        score += plannerBoost > 0 ? 2 : 1;
+
+        if (!boss && score > 0 && score % 8 === 0) {
+          if (level % 5 === 0) startBossRound();
+          else { level += 1; frame = 0; }
+        }
+
+        ball.dx *= 1.02;
+        ball.dy *= 1.02;
+
+        if (score > highScore) {
+          highScore = score;
+          localStorage.setItem("bbpBossHighScore", highScore);
+        }
+      }
+
+      if (boss && ball.y - ball.r <= boss.y && Math.abs(ball.x - boss.x) < 34 && ball.dy < 0) {
+        boss.hp -= plannerBoost > 0 ? 2 : 1;
+        ball.dy *= -1;
+        if (boss.hp <= 0) {
+          coins += 15;
+          endBossRound();
+        }
+      }
+
+      if (ball.y > canvas.height) {
+        if (shield > 0) {
+          shield -= 1;
+          ball.dy *= -1;
+          ball.y = canvas.height - 45;
+        } else gameState = "gameover";
+      }
+    }
+
+    function updateDrops() {
+      drops.forEach(drop => drop.y += drop.speed);
+      drops = drops.filter(drop => {
+        const caught = drop.y + 12 >= paddle.y && drop.x >= paddle.x && drop.x <= paddle.x + paddle.w && drop.y <= paddle.y + paddle.h + 10;
+        if (caught) {
+          if (drop.type === "💎") coins += 3;
+          if (drop.type === "💵") { coins += 5; score += 1; }
+          if (drop.type === "🌹") { coins += 2; shield += 1; }
+          if (drop.type === "📔") { coins += 4; plannerBoost = 600; }
+          return false;
+        }
+        return drop.y < canvas.height + 30;
+      });
+    }
+
+    function updateObstacles() {
+      obstacles.forEach(obs => obs.y += obs.speed);
+      obstacles = obstacles.filter(obs => {
+        const hitsPaddle = obs.y + 12 >= paddle.y && obs.x >= paddle.x && obs.x <= paddle.x + paddle.w && obs.y <= paddle.y + paddle.h + 12;
+        const hitsBall = Math.abs(obs.x - ball.x) < 20 && Math.abs(obs.y - ball.y) < 20;
+        if (hitsPaddle || hitsBall) {
+          if (shield > 0) shield -= 1;
+          else gameState = "gameover";
+          return false;
+        }
+        return obs.y < canvas.height + 30;
+      });
+    }
+
+    function updateBoss() {
+      if (!boss) return;
+      boss.x += boss.speed * boss.dir;
+      if (boss.x > canvas.width - 35 || boss.x < 35) boss.dir *= -1;
+      if (Math.random() < 0.045) spawnObstacle();
+    }
+
+    function update() {
+      if (gameState !== "playing") return;
+      frame++;
+      if (plannerBoost > 0) plannerBoost--;
+      if (warningTimer > 0) warningTimer--;
+      updateBall();
+      updateDrops();
+      updateObstacles();
+      updateBoss();
+      if (Math.random() < 0.015 + level * 0.002 && !boss) spawnDrop();
+      if (Math.random() < 0.01 + level * 0.001 && boss) spawnDrop();
+      updateHud();
+    }
+
+    function drawPlannerBoostTag() {
+      if (plannerBoost > 0) {
+        ctx.save();
+        ctx.fillStyle = "rgba(255,255,255,0.12)";
+        ctx.fillRect(120, 52, 160, 22);
+        ctx.fillStyle = "#ffe1f2";
+        ctx.font = "14px Arial";
+        ctx.fillText("Planner Boost Active", 136, 68);
+        ctx.restore();
+      }
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      drawBackgroundDetails();
+      drawPaddle();
+      drawBall();
+      drawShield();
+      drawDrops();
+      drawObstacles();
+      drawBoss();
+      drawPlannerBoostTag();
+
+      if (frame < 90 && gameState === "playing" && !boss) drawBanner("Level " + level);
+      if (warningTimer > 0) drawBanner("Distractions Incoming", 350, 22);
+      if (gameState === "start") drawStartScreen();
+      if (gameState === "gameover") drawGameOver();
+    }
+
+    function loop() {
+      update();
+      draw();
+      requestAnimationFrame(loop);
+    }
+
+    function movePaddle(clientX) {
+      const rect = canvas.getBoundingClientRect();
+      paddle.x = clientX - rect.left - paddle.w / 2;
+      if (paddle.x < 0) paddle.x = 0;
+      if (paddle.x + paddle.w > canvas.width) paddle.x = canvas.width - paddle.w;
+    }
+
+    function resetGame() {
+      score = 0; coins = 0; level = 1; shield = 0; plannerBoost = 0; frame = 0; warningTimer = 0;
+      boss = null; drops = []; obstacles = []; paddle.w = 110; gameState = "playing";
+      resetBall(); updateHud();
+    }
+
+    document.addEventListener("mousemove", e => movePaddle(e.clientX));
+    document.addEventListener("touchmove", e => { movePaddle(e.touches[0].clientX); e.preventDefault(); }, { passive: false });
+
+    canvas.addEventListener("click", () => {
+      if (gameState === "start") { gameState = "playing"; resetBall(); }
+      else if (gameState === "gameover") resetGame();
+    });
+
+    canvas.addEventListener("touchstart", () => {
+      if (gameState === "start") { gameState = "playing"; resetBall(); }
+      else if (gameState === "gameover") resetGame();
+    });
+
+    buyWidthBtn.addEventListener("click", () => {
+      if (coins >= 10 && gameState !== "start") { coins -= 10; paddle.w = Math.min(paddle.w + 25, 190); updateHud(); }
+    });
+    buySlowBtn.addEventListener("click", () => {
+      if (coins >= 15 && gameState !== "start") { coins -= 15; ball.dx *= 0.82; ball.dy *= 0.82; updateHud(); }
+    });
+    buyShieldBtn.addEventListener("click", () => {
+      if (coins >= 20 && gameState !== "start") { coins -= 20; shield += 1; updateHud(); }
+    });
+    buyPlannerBtn.addEventListener("click", () => {
+      if (coins >= 18 && gameState !== "start") { coins -= 18; plannerBoost = 600; updateHud(); }
+    });
+
+    updateHud();
+    loop();
+  </script>
+</body>
+</html>
